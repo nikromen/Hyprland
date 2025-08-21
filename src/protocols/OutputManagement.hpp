@@ -146,7 +146,7 @@ class COutputConfiguration {
     SP<CZwlrOutputConfigurationV1>            resource;
     std::vector<WP<COutputConfigurationHead>> heads;
     WP<COutputManager>                        owner;
-
+    
     bool                                      applyTestConfiguration(bool test);
 };
 

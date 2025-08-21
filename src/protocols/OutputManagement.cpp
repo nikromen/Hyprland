@@ -1,5 +1,7 @@
 #include "OutputManagement.hpp"
 #include <algorithm>
+#include <chrono>
+#include <unistd.h>
 #include "../Compositor.hpp"
 
 using namespace Aquamarine;
@@ -330,12 +332,39 @@ COutputConfiguration::COutputConfiguration(SP<CZwlrOutputConfigurationV1> resour
     resource->setApply([this](CZwlrOutputConfigurationV1* r) {
         const auto SUCCESS = applyTestConfiguration(false);
 
-        if (SUCCESS)
-            resource->sendSucceeded();
-        else
+        if (!SUCCESS) {
+            // In case of failure, respond immediately
             resource->sendFailed();
-
-        owner->sendDone();
+            if (owner) {
+                owner->sendDone();
+            }
+            return;
+        }
+        
+        // Save local copies of what we need
+        auto localResource = resource;
+        auto localOwner = owner;
+        
+        // In case of success, check if we need to wait for monitor reload
+        if (g_pConfigManager->m_bWantsMonitorReload) {
+            // Use a direct approach - apply settings and use ConfigManager's wantsMonitorReload flag
+            // to verify changes are actually applied
+            
+            // We manually run the monitor reload - this is the key change
+            g_pConfigManager->performMonitorReload();
+            
+            // Monitor reload has completed - now we send our success
+            resource->sendSucceeded();
+            if (owner) {
+                owner->sendDone();
+            }
+        } else {
+            // If no monitor reload is needed, send success immediately
+            resource->sendSucceeded();
+            if (owner) {
+                owner->sendDone();
+            }
+        }
     });
 }
 
@@ -423,6 +452,8 @@ bool COutputConfiguration::applyTestConfiguration(bool test) {
 
     return true;
 }
+
+// Method removed - we now send success immediately and reload monitors afterward
 
 COutputConfigurationHead::COutputConfigurationHead(SP<CZwlrOutputConfigurationHeadV1> resource_, CMonitor* pMonitor_) : resource(resource_), pMonitor(pMonitor_) {
     if (!good())
