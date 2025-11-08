@@ -347,11 +347,13 @@ COutputConfiguration::COutputConfiguration(SP<CZwlrOutputConfigurationV1> resour
         
         // In case of success, check if we need to wait for monitor reload
         if (g_pConfigManager->m_bWantsMonitorReload) {
-            // Use a direct approach - apply settings and use ConfigManager's wantsMonitorReload flag
-            // to verify changes are actually applied
+            // Use a direct approach - apply settings and ensure monitor changes are applied
             
             // We manually run the monitor reload - this is the key change
-            g_pConfigManager->performMonitorReload();
+            // Only run this if the flag is still set (in case another process has already triggered the reload)
+            if (g_pConfigManager->m_bWantsMonitorReload) {
+                g_pConfigManager->performMonitorReload();
+            }
             
             // Monitor reload has completed - now we send our success
             resource->sendSucceeded();
