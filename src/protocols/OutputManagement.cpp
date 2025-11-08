@@ -25,6 +25,8 @@ COutputManager::COutputManager(SP<CZwlrOutputManagerV1> resource_) : resource(re
             PROTO::outputManagement->m_vConfigurations.pop_back();
             return;
         }
+
+        RESOURCE->m_self = RESOURCE;
     });
 
     // send all heads at start
@@ -321,19 +323,25 @@ COutputConfiguration::COutputConfiguration(SP<CZwlrOutputConfigurationV1> resour
     resource->setTest([this](CZwlrOutputConfigurationV1* r) {
         const auto SUCCESS = applyTestConfiguration(true);
 
-        if (SUCCESS)
-            resource->sendSucceeded();
-        else
+        if (SUCCESS) {
+            // defer sending success until after monitor reload is complete
+            LOGM(LOG, "OutputManagement: Queueing test success event (deferred)");
+            PROTO::outputManagement->m_pendingConfigurationSuccessEvents.push_back(m_self);
+        } else {
             resource->sendFailed();
+        }
     });
 
     resource->setApply([this](CZwlrOutputConfigurationV1* r) {
         const auto SUCCESS = applyTestConfiguration(false);
 
-        if (SUCCESS)
-            resource->sendSucceeded();
-        else
+        if (SUCCESS) {
+            // defer sending success until after monitor reload is complete
+            LOGM(LOG, "OutputManagement: Queueing apply success event (deferred), pending count: {}", PROTO::outputManagement->m_pendingConfigurationSuccessEvents.size());
+            PROTO::outputManagement->m_pendingConfigurationSuccessEvents.push_back(m_self);
+        } else {
             resource->sendFailed();
+        }
 
         owner->sendDone();
     });
@@ -569,7 +577,11 @@ bool COutputConfigurationHead::good() {
 }
 
 COutputManagementProtocol::COutputManagementProtocol(const wl_interface* iface, const int& ver, const std::string& name) : IWaylandProtocol(iface, ver, name) {
-    static auto P = g_pHookSystem->hookDynamic("monitorLayoutChanged", [this](void* self, SCallbackInfo& info, std::any param) { this->updateAllOutputs(); });
+    static auto P = g_pHookSystem->hookDynamic("monitorLayoutChanged", [this](void* self, SCallbackInfo& info, std::any param) {
+        LOGM(LOG, "OutputManagement: monitorLayoutChanged hook triggered, pending events: {}", this->m_pendingConfigurationSuccessEvents.size());
+        this->updateAllOutputs();
+        this->sendPendingSuccessEvents();
+    });
 }
 
 void COutputManagementProtocol::bindManager(wl_client* client, void* data, uint32_t ver, uint32_t id) {
@@ -639,4 +651,21 @@ SP<SWlrManagerSavedOutputState> COutputManagementProtocol::getOutputStateFor(SP<
     }
 
     return nullptr;
+}
+
+void COutputManagementProtocol::sendPendingSuccessEvents() {
+    if (m_pendingConfigurationSuccessEvents.empty())
+        return;
+
+    LOGM(LOG, "Sending {} pending configuration success events", m_pendingConfigurationSuccessEvents.size());
+
+    for (auto const& configw : m_pendingConfigurationSuccessEvents) {
+        auto config = configw.lock();
+        if (!config || !config->good())
+            continue;
+
+        config->resource->sendSucceeded();
+    }
+
+    m_pendingConfigurationSuccessEvents.clear();
 }

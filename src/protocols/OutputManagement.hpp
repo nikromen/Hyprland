@@ -140,7 +140,8 @@ class COutputConfiguration {
   public:
     COutputConfiguration(SP<CZwlrOutputConfigurationV1> resource_, SP<COutputManager> owner_);
 
-    bool good();
+    bool                 good();
+    WP<COutputConfiguration> m_self; // Weak pointer to self for deferred success events
 
   private:
     SP<CZwlrOutputConfigurationV1>            resource;
@@ -148,6 +149,8 @@ class COutputConfiguration {
     WP<COutputManager>                        owner;
 
     bool                                      applyTestConfiguration(bool test);
+
+    friend class COutputManagementProtocol;
 };
 
 class COutputManagementProtocol : public IWaylandProtocol {
@@ -159,6 +162,8 @@ class COutputManagementProtocol : public IWaylandProtocol {
     // doesn't have to return one
     SP<SWlrManagerSavedOutputState> getOutputStateFor(SP<CMonitor> pMonitor);
 
+    void                            sendPendingSuccessEvents();
+
   private:
     void destroyResource(COutputManager* resource);
     void destroyResource(COutputHead* resource);
@@ -168,12 +173,13 @@ class COutputManagementProtocol : public IWaylandProtocol {
 
     void updateAllOutputs();
 
-    //
     std::vector<SP<COutputManager>>           m_vManagers;
     std::vector<SP<COutputHead>>              m_vHeads;
     std::vector<SP<COutputMode>>              m_vModes;
     std::vector<SP<COutputConfiguration>>     m_vConfigurations;
     std::vector<SP<COutputConfigurationHead>> m_vConfigurationHeads;
+    std::vector<WP<COutputConfiguration>>     m_pendingConfigurationSuccessEvents;
+
 
     SP<COutputHead>                           headFromResource(wl_resource* r);
     SP<COutputMode>                           modeFromResource(wl_resource* r);
